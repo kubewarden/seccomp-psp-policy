@@ -1,0 +1,18 @@
+name: seccomp-psp
+description: Pod Security Policy that controls usage of Seccomp profile
+homepage: https://github.com/kubewarden/seccomp-psp-policy
+author:
+  name: Kubewarden developers
+  homepage: https://github.com/kubewarden
+download:
+  # Important: leave the __TAG__ around: this is automatically replaced with the value of the git tag
+registry: ghcr.io/kubewarden/policies/seccomp-psp:__TAG__
+  # url is optional
+  url: https://github.com/yourorg/seccomp-psp-policy/releases/download/__TAG__/policy.wasm
+keywords:
+  - PSP
+  - seccomp
+resources:
+  - Pod
+mutation: false
+contextAware: false
