@@ -30,7 +30,7 @@ metadata:
   name: psp-seccomp
 spec:
   policyServer: default
-  module: registry://ghcr.io/kubewarden/policies/seccomp-psp-policy:latest
+  module: registry://ghcr.io/kubewarden/policies/seccomp-psp:v0.1.0
   rules:
   - apiGroups: [""]
     apiVersions: ["v1"]
