@@ -6,7 +6,7 @@ author:
   homepage: https://github.com/kubewarden
 download:
   # Important: leave the __TAG__ around: this is automatically replaced with the value of the git tag
-registry: ghcr.io/kubewarden/policies/seccomp-psp:__TAG__
+  registry: ghcr.io/kubewarden/policies/seccomp-psp:__TAG__
   # url is optional
   url: https://github.com/yourorg/seccomp-psp-policy/releases/download/__TAG__/policy.wasm
 keywords:
