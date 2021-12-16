@@ -24,7 +24,7 @@ impl kubewarden::settings::Validatable for Settings {
         .collect();
 
         for profile_type in &self.profile_types {
-            if allowed_profile_types.contains(profile_type) {
+            if !allowed_profile_types.contains(profile_type) {
                 return Err(format!("Invalid Seccomp profile type: {}", profile_type));
             }
             if profile_type == "Localhost" && self.localhost_profiles.is_empty() {
@@ -35,6 +35,37 @@ impl kubewarden::settings::Validatable for Settings {
             }
         }
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kubewarden::settings::Validatable;
+    use anyhow::Result;
+
+    macro_rules! configuration {
+        (allowed_profiles: $allowed_profiles:expr, profile_types: $profile_types:expr, localhost_profiles: $localhost_profiles: expr) => {
+            &Settings {
+                allowed_profiles: $allowed_profiles.split(",").map(String::from).collect(),
+                profile_types: $profile_types.split(",").map(String::from).collect(),
+                localhost_profiles: $localhost_profiles.split(",").map(String::from).collect(),
+            }
+        };
+    }
+
+    #[test]
+    fn test_allowed_profile_types() -> Result<()> {
+        let settings = configuration!(allowed_profiles: "runtime/default,docker/default,localhost/test", profile_types: "RuntimeDefault,Localhost,Unconfined", localhost_profiles: "test");
+        assert!(settings.validate().is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn test_disallowed_profile_types() -> Result<()> {
+        let settings = configuration!(allowed_profiles: "runtime/default,docker/default,localhost/test", profile_types: "RuntimeDefault,Localhost,Dummy", localhost_profiles: "test");
+        assert!(settings.validate().is_err());
         Ok(())
     }
 }
