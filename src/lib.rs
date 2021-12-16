@@ -68,6 +68,48 @@ fn do_validate_annotations(pod: &apicore::Pod, settings: &settings::Settings) ->
     Ok(())
 }
 
+/* Function used to check if the seccomp profile type is defined in the
+ * allowed_profiles settings
+ */
+fn allowed_profiles_has_profile_type(
+    settings: &settings::Settings,
+    seccomp_profile: &apicore::SeccompProfile,
+) -> bool {
+    // Unfortunately, we cannot store the allowed_profiles settings parsed to
+    // avoid this iteration in every evaluation.
+    for profile in &settings.allowed_profiles {
+        if (seccomp_profile.type_ == "RuntimeDefault"
+            && (profile == "runtime/default" || profile == "docker/default"))
+            || seccomp_profile.type_ == "Localhost" && profile.starts_with("localhost/")
+            || seccomp_profile.type_ == "Unconfined" && profile == "unconfined"
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/* Function used to check if the seccomp profile localhost profile is defined
+ * in the allowed_profiles settings
+ */
+fn localhost_profile_defined_in_allowed_profiles(
+    settings: &settings::Settings,
+    seccomp_profile: &apicore::SeccompProfile,
+) -> bool {
+    // Unfortunately, we cannot store the allowed_profiles settings parsed to
+    // avoid this iteration in every evaluation.
+    for profile in &settings.allowed_profiles {
+        if seccomp_profile.type_ == "Localhost" && profile.starts_with("localhost/") {
+            if let Some(localhost_profile) = &seccomp_profile.localhost_profile {
+                if profile.ends_with(localhost_profile) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /* Validates the Seccomp configuration of the given containers.
  * Checks the type values and if the localhost profile is set when necessary
  */
@@ -80,13 +122,20 @@ where
     for container in containers {
         if let Some(security_context) = container.security_context() {
             if let Some(seccomp_profile) = security_context.seccomp_profile.clone() {
-                if !settings.profile_types.contains(&seccomp_profile.type_) {
+                if !settings.profile_types.contains(&seccomp_profile.type_)
+                    && !allowed_profiles_has_profile_type(settings, &seccomp_profile)
+                {
                     invalid_seccomp_profile_types.push(seccomp_profile.type_.clone())
                 }
                 if seccomp_profile.type_ == "Localhost" {
                     match &seccomp_profile.localhost_profile {
                         Some(localhost_profile) => {
-                            if !settings.localhost_profiles.contains(localhost_profile) {
+                            if !settings.localhost_profiles.contains(localhost_profile)
+                                && !localhost_profile_defined_in_allowed_profiles(
+                                    settings,
+                                    &seccomp_profile,
+                                )
+                            {
                                 invalid_seccomp_profile.push(localhost_profile.clone())
                             }
                         }
@@ -125,24 +174,34 @@ fn do_validate_pod_security_context(
 ) -> Result<()> {
     if let Some(security_context) = &pod.security_context {
         if let Some(seccomp_profile) = security_context.seccomp_profile.clone() {
-            if !settings.profile_types.contains(&seccomp_profile.type_) {
+            if !settings.profile_types.contains(&seccomp_profile.type_)
+                && !allowed_profiles_has_profile_type(settings, &seccomp_profile)
+            {
                 return Err(anyhow!(format!(
                     "Invalid podspec seccomp profile types: {}",
                     &seccomp_profile.type_
                 )));
             }
             if seccomp_profile.type_ == "Localhost" {
-                if let Some(localhost_profile) = &seccomp_profile.localhost_profile {
-                    if !settings.localhost_profiles.contains(localhost_profile) {
-                        return Err(anyhow!(format!(
-                            "Invalid podspec seccomp profile: {}",
-                            &localhost_profile
-                        )));
+                match &seccomp_profile.localhost_profile {
+                    Some(localhost_profile) => {
+                        if !settings.localhost_profiles.contains(localhost_profile)
+                            && !localhost_profile_defined_in_allowed_profiles(
+                                settings,
+                                &seccomp_profile,
+                            )
+                        {
+                            return Err(anyhow!(format!(
+                                "Invalid podspec seccomp profile: {}",
+                                &localhost_profile
+                            )));
+                        }
                     }
-                } else {
-                    return Err(anyhow!(
-                        "The podspec localhost seccomp profile must be set.".to_string(),
-                    ));
+                    None => {
+                        return Err(anyhow!(
+                            "The podspec localhost seccomp profile must be set.".to_string(),
+                        ));
+                    }
                 }
             }
         }
@@ -1061,6 +1120,7 @@ mod tests {
 
         Ok(())
     }
+
     #[test]
     fn error_message_may_has_more_than_one_violation() -> Result<()> {
         assert_eq!(
@@ -1131,6 +1191,310 @@ mod tests {
               PolicyResponse::Reject(
                   "Resource violations: Invalid container seccomp profile types: dummy_type; Invalid container seccomp profile: dummy_profile".to_string()
               )
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn security_context_validation_should_not_fail_when_just_allowed_profiles_are_provided(
+    ) -> Result<()> {
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        ephemeral_containers: Some(vec![apicore::EphemeralContainer {
+                            security_context: Some(apicore::SecurityContext {
+                                seccomp_profile: Some(apicore::SeccompProfile {
+                                    type_: "RuntimeDefault".to_string(),
+                                    ..apicore::SeccompProfile::default()
+                                }),
+                                ..apicore::SecurityContext::default()
+                            }),
+                            ..apicore::EphemeralContainer::default()
+                        }]),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "docker/default", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        ephemeral_containers: Some(vec![apicore::EphemeralContainer {
+                            security_context: Some(apicore::SecurityContext {
+                                seccomp_profile: Some(apicore::SeccompProfile {
+                                    type_: "RuntimeDefault".to_string(),
+                                    ..apicore::SeccompProfile::default()
+                                }),
+                                ..apicore::SecurityContext::default()
+                            }),
+                            ..apicore::EphemeralContainer::default()
+                        }]),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        ephemeral_containers: Some(vec![apicore::EphemeralContainer {
+                            security_context: Some(apicore::SecurityContext {
+                                seccomp_profile: Some(apicore::SeccompProfile {
+                                    type_: "Localhost".to_string(),
+                                    localhost_profile: Some("profile".to_string()),
+                                    ..apicore::SeccompProfile::default()
+                                }),
+                                ..apicore::SecurityContext::default()
+                            }),
+                            ..apicore::EphemeralContainer::default()
+                        }]),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        containers: vec![apicore::Container {
+                            security_context: Some(apicore::SecurityContext {
+                                seccomp_profile: Some(apicore::SeccompProfile {
+                                    type_: "dummy".to_string(),
+                                    ..apicore::SeccompProfile::default()
+                                }),
+                                ..apicore::SecurityContext::default()
+                            }),
+                            ..apicore::Container::default()
+                        }],
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default,docker/default,localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Reject(
+                "Resource violations: Invalid container seccomp profile types: dummy".to_string()
+            )
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        containers: vec![
+                            apicore::Container {
+                                security_context: Some(apicore::SecurityContext {
+                                    seccomp_profile: Some(apicore::SeccompProfile {
+                                        type_: "dummy".to_string(),
+                                        ..apicore::SeccompProfile::default()
+                                    }),
+                                    ..apicore::SecurityContext::default()
+                                }),
+                                ..apicore::Container::default()
+                            },
+                            apicore::Container {
+                                security_context: Some(apicore::SecurityContext {
+                                    seccomp_profile: Some(apicore::SeccompProfile {
+                                        type_: "dummy2".to_string(),
+                                        ..apicore::SeccompProfile::default()
+                                    }),
+                                    ..apicore::SecurityContext::default()
+                                }),
+                                ..apicore::Container::default()
+                            }
+                        ],
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default,docker/default,localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Reject(
+                "Resource violations: Invalid container seccomp profile types: dummy,dummy2"
+                    .to_string()
+            )
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        containers: vec![
+                            apicore::Container {
+                                security_context: Some(apicore::SecurityContext {
+                                    seccomp_profile: Some(apicore::SeccompProfile {
+                                        type_: "Localhost".to_string(),
+                                        localhost_profile: Some("dummy".to_string()),
+                                        ..apicore::SeccompProfile::default()
+                                    }),
+                                    ..apicore::SecurityContext::default()
+                                }),
+                                ..apicore::Container::default()
+                            },
+                            apicore::Container {
+                                security_context: Some(apicore::SecurityContext {
+                                    seccomp_profile: Some(apicore::SeccompProfile {
+                                        type_: "Localhost".to_string(),
+                                        localhost_profile: Some("dummy2".to_string()),
+                                        ..apicore::SeccompProfile::default()
+                                    }),
+                                    ..apicore::SecurityContext::default()
+                                }),
+                                ..apicore::Container::default()
+                            }
+                        ],
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default,docker/default,localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Reject(
+                "Resource violations: Invalid container seccomp profile: dummy,dummy2".to_string()
+            )
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        security_context: Some(apicore::PodSecurityContext {
+                            seccomp_profile: Some(apicore::SeccompProfile {
+                                type_: "RuntimeDefault".to_string(),
+                                ..apicore::SeccompProfile::default()
+                            }),
+                            ..apicore::PodSecurityContext::default()
+                        }),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        security_context: Some(apicore::PodSecurityContext {
+                            seccomp_profile: Some(apicore::SeccompProfile {
+                                type_: "Localhost".to_string(),
+                                localhost_profile: Some("profile".to_string()),
+                                ..apicore::SeccompProfile::default()
+                            }),
+                            ..apicore::PodSecurityContext::default()
+                        }),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        security_context: Some(apicore::PodSecurityContext {
+                            seccomp_profile: Some(apicore::SeccompProfile {
+                                type_: "Unconfined".to_string(),
+                                ..apicore::SeccompProfile::default()
+                            }),
+                            ..apicore::PodSecurityContext::default()
+                        }),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "unconfined", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        security_context: Some(apicore::PodSecurityContext {
+                            seccomp_profile: Some(apicore::SeccompProfile {
+                                type_: "Localhost".to_string(),
+                                localhost_profile: Some("dummy".to_string()),
+                                ..apicore::SeccompProfile::default()
+                            }),
+                            ..apicore::PodSecurityContext::default()
+                        }),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "localhost/profile", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Reject(
+                "Resource violations: Invalid podspec seccomp profile: dummy".to_string()
+            )
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        security_context: Some(apicore::PodSecurityContext {
+                            seccomp_profile: Some(apicore::SeccompProfile {
+                                type_: "Localhost".to_string(),
+                                localhost_profile: Some("profile2".to_string()),
+                                ..apicore::SeccompProfile::default()
+                            }),
+                            ..apicore::PodSecurityContext::default()
+                        }),
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "locahost/profile,localhost/profile2", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
+        );
+
+        assert_eq!(
+            do_validate(
+                &apicore::Pod {
+                    spec: Some(apicore::PodSpec {
+                        containers: vec![apicore::Container {
+                            security_context: Some(apicore::SecurityContext {
+                                seccomp_profile: Some(apicore::SeccompProfile {
+                                    type_: "Unconfined".to_string(),
+                                    ..apicore::SeccompProfile::default()
+                                }),
+                                ..apicore::SecurityContext::default()
+                            }),
+                            ..apicore::Container::default()
+                        }],
+                        ..apicore::PodSpec::default()
+                    }),
+                    ..apicore::Pod::default()
+                },
+                configuration!(allowed_profiles: "runtime/default,docker/default,unconfined", profile_types: "", localhost_profiles: ""),
+            )?,
+            PolicyResponse::Accept
         );
 
         Ok(())
