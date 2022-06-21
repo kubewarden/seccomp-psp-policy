@@ -1,5 +1,5 @@
-extern crate wapc_guest as guest;
 use guest::prelude::*;
+use kubewarden_policy_sdk::wapc_guest as guest;
 
 use anyhow::{anyhow, Result};
 use k8s_openapi::api::core::v1 as apicore;
@@ -254,7 +254,7 @@ fn validate(payload: &[u8]) -> CallResult {
     let settings = validation_request.settings;
 
     match do_validate(&pod, &settings).unwrap() {
-        PolicyResponse::Reject(msg) => kubewarden::reject_request(Some(msg), None),
+        PolicyResponse::Reject(msg) => kubewarden::reject_request(Some(msg), None, None, None),
         PolicyResponse::Accept => kubewarden::accept_request(),
     }
 }
