@@ -26,5 +26,3 @@ jobs:
     with:
       input-wasm: seccomp_psp_policy
       oci-target: ghcr.io/${{ github.repository_owner }}/policies/seccomp-psp
-    secrets:
-      workflow-pat: ${{ secrets.WORKFLOW_PAT }}
