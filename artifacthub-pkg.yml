@@ -1,20 +1,20 @@
 ---
-version: 0.1.1
+version: 0.1.2
 name: seccomp-psp
 displayName: Seccomp PSP
-createdAt: '2022-07-19T16:08:29+02:00'
+createdAt: '2023-01-19T14:46:21+02:00'
 description: Pod Security Policy that controls usage of Seccomp profile
 license: Apache-2.0
 homeURL: https://github.com/kubewarden/seccomp-psp-policy
 containersImages:
 - name: policy
-  image: ghcr.io/kubewarden/policies/seccomp-psp:v0.1.1
+  image: ghcr.io/kubewarden/policies/seccomp-psp:v0.1.2
 keywords:
 - psp
 - seccomp
 links:
 - name: policy
-  url: https://github.com/yourorg/seccomp-psp-policy/releases/download/v0.1.1/policy.wasm
+  url: https://github.com/yourorg/seccomp-psp-policy/releases/download/v0.1.2/policy.wasm
 - name: source
   url: https://github.com/kubewarden/seccomp-psp-policy
 provider:
@@ -25,3 +25,53 @@ annotations:
   kubewarden/resources: Pod
   kubewarden/mutation: false
   kubewarden/contextAware: false
+  kubewarden/rules: |
+    rules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      resources: ["pods"]
+      operations: ["CREATE"]
+  kubewarden/questions-ui: |
+    questions:
+    - default: null
+      description: >-
+        This policy provides a replacement for the Pod Security Policy that deals
+        with seccomp profiles. Prior to Kubernetes 1.19, seccomp profiles could be
+        defined only via Pod annotations. Starting from Kubernetes 1.19 the seccomp
+        profiles can be managed via the securityContext field of Pods and
+        Containers. Note: the seccomp annotations are deprecated and will be dropped
+        starting from Kubernetes 1.25.
+      group: Settings
+      label: Description
+      required: false
+      hide_input: true
+      type: map
+      variable: description
+    - default: []
+      tooltip: >-
+        Define the accecpted profile values for the annotations
+        container.seccomp.security.alpha.kubernetes.io/<container> and
+        seccomp.security.alpha.kubernetes.io/pod.
+      group: Settings
+      label: Allowed profiles
+      required: false
+      type: array[
+      variable: allowed_profiles
+    - default: []
+      tooltip: >-
+        Define the allowed values to be set in the seccomp type in the security
+        context of a container or of the Pod.
+      group: Settings
+      label: Profile types
+      required: false
+      type: array[
+      variable: profile_types
+    - default: []
+      tooltip: >-
+        Define the allowed localhost profiles. This is used only when the
+        'Localhost' type is allowed inside of the security context.
+      group: Settings
+      label: Localhost profiles
+      required: false
+      type: array[
+      variable: localhost_profiles

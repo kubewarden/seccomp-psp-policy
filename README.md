@@ -1,7 +1,3 @@
-# seccomp-psp-policy
-
-## Description
-
 This policy provides a replacement for the Pod Security Policy that deals with
 seccomp profiles.
 
@@ -11,7 +7,6 @@ via the `securityContext` field of Pods and Containers.
 
 Note well: the seccomp annotations are deprecated and will be dropped starting
 from Kubernetes 1.25.
-
 
 ## Settings
 
