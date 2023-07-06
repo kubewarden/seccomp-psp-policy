@@ -1,8 +1,12 @@
 rules:
-- apiGroups: [""]
-  apiVersions: ["v1"]
-  resources: ["pods"]
-  operations: ["CREATE"]
+  - apiGroups:
+      - ''
+    apiVersions:
+      - v1
+    resources:
+      - pods
+    operations:
+      - CREATE
 mutating: false
 contextAware: false
 executionMode: kubewarden-wapc
@@ -11,11 +15,14 @@ annotations:
   io.artifacthub.displayName: Seccomp PSP
   io.artifacthub.resources: Pod
   io.artifacthub.keywords: psp, seccomp
+  # kubewarden specific
   io.kubewarden.policy.ociUrl: ghcr.io/kubewarden/policies/seccomp-psp
-  # rest
   io.kubewarden.policy.title: seccomp-psp
-  io.kubewarden.policy.description: Pod Security Policy that controls usage of Seccomp profile
-  io.kubewarden.policy.author: "Kubewarden developers <cncf-kubewarden-maintainers@lists.cncf.io>"
+  io.kubewarden.policy.description: Pod Security Policy that controls usage of Seccomp
+    profile
+  io.kubewarden.policy.author: Kubewarden developers <cncf-kubewarden-maintainers@lists.cncf.io>
   io.kubewarden.policy.url: https://github.com/kubewarden/seccomp-psp-policy
   io.kubewarden.policy.source: https://github.com/kubewarden/seccomp-psp-policy
   io.kubewarden.policy.license: Apache-2.0
+  io.kubewarden.policy.category: PSP
+  io.kubewarden.policy.severity: medium
