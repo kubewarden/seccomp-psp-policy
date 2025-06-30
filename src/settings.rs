@@ -25,7 +25,7 @@ impl kubewarden::settings::Validatable for Settings {
 
         for profile_type in &self.profile_types {
             if !allowed_profile_types.contains(profile_type) {
-                return Err(format!("Invalid Seccomp profile type: {}", profile_type));
+                return Err(format!("Invalid Seccomp profile type: {profile_type}"));
             }
             if profile_type == "Localhost" && self.localhost_profiles.is_empty() {
                 return Err(
